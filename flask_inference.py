@@ -1,4 +1,5 @@
 from glob import glob
+import pickle
 import threading
 import torch
 from time import  strftime
@@ -157,8 +158,28 @@ async def upload_face():
         return "No Face Name Supplied"
     face_name=os.path.basename(face_name)
     request.files['face_file'].save(global_settings.face_folder + "/" + face_name + ".sadface" ) # .sadface is for security
+    
+    f = open(global_settings.face_folder + "/" + face_name+".sadface_settings", "wb")
+    pickle.dump(SadTalker_Settings(), f)
+    f.close()
     return '{"status":"success"}'
 
+@app.route('/generate_avatar_message', methods = ['POST'])
+async def generate_avatar_message():
+    if request.files['wav_file'].filename == '' : 
+        return "No Wav File"
+    face_name=request.form.get('name',None)
+    if face_name == None:
+        return "No Face Name Supplied"
+    face_name=os.path.basename(face_name)
+    face_file=global_settings.face_folder + '/' + face_name + '.sadface'
+    f = open(global_settings.face_folder + '/' + face_name + ".sadface_settings", 'rb')
+    stored_settings = pickle.load(f)
+    f.close()
+    wav_file=tempfile.NamedTemporaryFile().name    
+    request.files['wav_file'].save(wav_file)
+    final_file=sadtalker_main(wav_file,face_file,stored_settings);
+    return send_file(final_file)
 
 @app.get("/view_system_face")
 async def view_system_face():
