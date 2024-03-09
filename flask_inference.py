@@ -145,7 +145,12 @@ async def root():
 </html>'''
 
 @app.route('/upload', methods = ['POST'])
-async def run_sadtalker(): #need to check args
+async def run_sadtalker(): 
+    if request.files['face_file'].filename == '' :
+        return "No Face File"
+    if request.files['wav_file'].filename == ''
+        return "No Wav File"
+        
     face_file = request.files['face_file']
     temp_filename1=tempfile.NamedTemporaryFile()  
     face_file.save(temp_filename1.name)
