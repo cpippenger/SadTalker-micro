@@ -1,5 +1,5 @@
 from glob import glob
-
+import threading
 import torch
 from time import  strftime
 import os, sys
@@ -12,6 +12,7 @@ from src.facerender.animate import AnimateFromCoeff
 from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
+
 
 
 app = Flask(__name__,static_folder="cache")
@@ -144,22 +145,30 @@ async def root():
     </body>
 </html>'''
 
+def temp_save(obj_file,str_filename):
+    obj_file.save(str_filename)
+
+
 @app.route('/upload', methods = ['POST'])
 async def run_sadtalker(): 
     if request.files['face_file'].filename == '' :
         return "No Face File"
-    if request.files['wav_file'].filename == ''
+    if request.files['wav_file'].filename == '' : 
         return "No Wav File"
-        
-    face_file = request.files['face_file']
-    temp_filename1=tempfile.NamedTemporaryFile()  
-    face_file.save(temp_filename1.name)
-    
-    wav_file = request.files['wav_file']
-    temp_filename2=tempfile.NamedTemporaryFile() 
-    wav_file.save(temp_filename2.name)
-    
-    final_file=sadtalker_main(temp_filename2.name,temp_filename1.name);
+    # adding multi-threaded here to compensite for large file uploads
+    # may remove later
+    face_file=tempfile.NamedTemporaryFile().name
+    wav_file=tempfile.NamedTemporaryFile().name
+    threads = []
+    threads.append(threading.Thread(target=temp_save, args=(request.files['wav_file'],wav_file)))
+    threads.append(threading.Thread(target=temp_save, args=(request.files['face_file'],face_file)))
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+    print(wav_file,face_file)
+    final_file=sadtalker_main(wav_file,face_file);
     
     return send_file(final_file,os.path.basename(final_file))
 
