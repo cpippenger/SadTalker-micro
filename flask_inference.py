@@ -2,9 +2,10 @@ from glob import glob
 import shutil
 import torch
 from time import  strftime
-import os, sys, time
-from argparse import ArgumentParser
-
+import os, sys
+import tempfile
+from flask import Flask, jsonify, request, render_template, send_file,redirect
+from uuid import uuid4 
 from src.utils.preprocess import CropAndExtract
 from src.test_audio2coeff import Audio2Coeff  
 from src.facerender.animate import AnimateFromCoeff
@@ -12,8 +13,7 @@ from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
 
-import tempfile
-from flask import Flask, jsonify, request, render_template, send_file,redirect
+
 app = Flask(__name__,static_folder="cache")
 
 # this is the same as the arguments here 
@@ -53,27 +53,20 @@ class SadTalker_Settings:
     device='cuda'
 
 settings=SadTalker_Settings()
-device = settings.device
 current_root_path = os.path.split(sys.argv[0])[0]
 sadtalker_paths = init_path(settings.checkpoint_dir, os.path.join(current_root_path, 'src/config'), settings.size, settings.old_version, settings.preprocess)
-preprocess_model = CropAndExtract(sadtalker_paths, device)
-audio_to_coeff = Audio2Coeff(sadtalker_paths,  device)    
-animate_from_coeff = AnimateFromCoeff(sadtalker_paths, device)
+preprocess_model = CropAndExtract(sadtalker_paths, settings.device)
+audio_to_coeff = Audio2Coeff(sadtalker_paths,  settings.device)    
+animate_from_coeff = AnimateFromCoeff(sadtalker_paths, settings.device)
 
 # need to handle file objects in args
-def sadtalker_main(str_wavfile,str_imgpath):
+def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings()):
+    runid=str(uuid4())
     #torch.backends.cudnn.enabled = False
     pic_path = str_imgpath
     audio_path = str_wavfile
-    save_dir = os.path.join(settings.result_dir, strftime("%Y_%m_%d_%H.%M.%S"))
+    save_dir = '/tmp/sadtalker_run_' + runid
     os.makedirs(save_dir, exist_ok=True)
-    pose_style = settings.pose_style
-    batch_size = settings.batch_size
-    input_yaw_list = settings.input_yaw
-    input_pitch_list = settings.input_pitch
-    input_roll_list = settings.input_roll
-    ref_eyeblink = settings.ref_eyeblink
-    ref_pose = settings.ref_pose
     first_frame_dir = os.path.join(save_dir, 'first_frame_dir')
     os.makedirs(first_frame_dir, exist_ok=True)
     print('3DMM Extraction for source image')
@@ -83,7 +76,7 @@ def sadtalker_main(str_wavfile,str_imgpath):
         print("Can't get the coeffs of the input")
         return
 
-    if ref_eyeblink is not None:
+    if settings.ref_eyeblink is not None:
         ref_eyeblink_videoname = os.path.splitext(os.path.split(ref_eyeblink)[-1])[0]
         ref_eyeblink_frame_dir = os.path.join(save_dir, ref_eyeblink_videoname)
         os.makedirs(ref_eyeblink_frame_dir, exist_ok=True)
@@ -92,8 +85,8 @@ def sadtalker_main(str_wavfile,str_imgpath):
     else:
         ref_eyeblink_coeff_path=None
 
-    if ref_pose is not None:
-        if ref_pose == ref_eyeblink: 
+    if settings.ref_pose is not None:
+        if settings.ref_pose == settings.ref_eyeblink: 
             ref_pose_coeff_path = ref_eyeblink_coeff_path
         else:
             ref_pose_videoname = os.path.splitext(os.path.split(ref_pose)[-1])[0]
@@ -105,8 +98,8 @@ def sadtalker_main(str_wavfile,str_imgpath):
         ref_pose_coeff_path=None
 
     #audio2ceoff
-    batch = get_data(first_coeff_path, audio_path, device, ref_eyeblink_coeff_path, still=settings.still)
-    coeff_path = audio_to_coeff.generate(batch, save_dir, pose_style, ref_pose_coeff_path)
+    batch = get_data(first_coeff_path, audio_path, settings.device, ref_eyeblink_coeff_path, still=settings.still)
+    coeff_path = audio_to_coeff.generate(batch, save_dir, settings.pose_style, ref_pose_coeff_path)
 
     # 3dface render
     if settings.face3dvis:
@@ -115,18 +108,18 @@ def sadtalker_main(str_wavfile,str_imgpath):
     
     #coeff2video
     data = get_facerender_data(coeff_path, crop_pic_path, first_coeff_path, audio_path, 
-                                batch_size, input_yaw_list, input_pitch_list, input_roll_list,
+                                settings.batch_size, settings.input_yaw, settings.input_pitch, settings.input_roll,
                                 expression_scale=settings.expression_scale, still_mode=settings.still, preprocess=settings.preprocess, size=settings.size)
     
     result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                 enhancer=settings.enhancer, background_enhancer=settings.background_enhancer, preprocess=settings.preprocess, img_size=settings.size)
+    outfile_name=  runid + '.mp4'
+    shutil.move(result, settings.result_dir + '/' + outfile_name)
+    print('The generated video is named:', outfile_name)
     
-    shutil.move(result, save_dir+'.mp4')
-    print('The generated video is named:', save_dir+'.mp4')
-    
-    if not settings.verbose:
-        shutil.rmtree(save_dir)
-    return save_dir+'.mp4'
+    #if not settings.verbose:
+    #    shutil.rmtree(save_dir)
+    return settings.result_dir + '/' + outfile_name
 
 
 
@@ -138,12 +131,7 @@ async def root():
       src="https://code.jquery.com/jquery-3.7.1.min.js"
       integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
       crossorigin="anonymous"></script> 
-      <script>
-      function send_it(){
-            alert(2);
-            return false;
-        }      
-      </script>
+
 </head>
    <body>
         <form method=post action="/upload"  enctype="multipart/form-data">
@@ -156,7 +144,7 @@ async def root():
 </html>'''
 
 @app.route('/upload', methods = ['POST'])
-async def run_sadtalker():
+async def run_sadtalker(): #need to check args
     face_file = request.files['face_file']
     temp_filename1=tempfile.NamedTemporaryFile()  
     face_file.save(temp_filename1.name)
