@@ -1,5 +1,5 @@
 from glob import glob
-import shutil
+
 import torch
 from time import  strftime
 import os, sys
@@ -114,12 +114,13 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings()):
     result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                 enhancer=settings.enhancer, background_enhancer=settings.background_enhancer, preprocess=settings.preprocess, img_size=settings.size)
     outfile_name=  runid + '.mp4'
-    shutil.move(result, settings.result_dir + '/' + outfile_name)
-    print('The generated video is named:', outfile_name)
+    outfile_path=settings.result_dir + '/' + outfile_name
+    os.rename(result, outfile_path)
+    print('The generated video is named:', outfile_path)
     
     #if not settings.verbose:
     #    shutil.rmtree(save_dir)
-    return settings.result_dir + '/' + outfile_name
+    return outfile_path
 
 
 
@@ -148,10 +149,14 @@ async def run_sadtalker(): #need to check args
     face_file = request.files['face_file']
     temp_filename1=tempfile.NamedTemporaryFile()  
     face_file.save(temp_filename1.name)
+    
     wav_file = request.files['wav_file']
     temp_filename2=tempfile.NamedTemporaryFile() 
     wav_file.save(temp_filename2.name)
-    return redirect(sadtalker_main(temp_filename2.name,temp_filename1.name),300)
+    
+    final_file=sadtalker_main(temp_filename2.name,temp_filename1.name);
+    
+    return send_file(final_file,os.path.basename(final_file))
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=7666)
