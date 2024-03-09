@@ -4,7 +4,7 @@ import torch
 from time import  strftime
 import os, sys
 import tempfile
-from flask import Flask, jsonify, request, render_template, send_file,redirect
+from flask import Flask, jsonify, request, render_template, send_file,redirect,send_from_directory
 from uuid import uuid4 
 from src.utils.preprocess import CropAndExtract
 from src.test_audio2coeff import Audio2Coeff  
@@ -13,7 +13,8 @@ from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
 
-
+#download models, script will not download over existing
+os.system("bash scripts/download_models.sh")
 
 app = Flask(__name__,static_folder="cache")
 
@@ -52,21 +53,24 @@ class SadTalker_Settings:
     z_near=5.0
     z_far=15.0
     device='cuda'
+    # these are extra
+    face_folder='./faces'
 
-settings=SadTalker_Settings()
+global_settings=SadTalker_Settings()
+os.makedirs(global_settings.face_folder, exist_ok=True)
+
 current_root_path = os.path.split(sys.argv[0])[0]
-sadtalker_paths = init_path(settings.checkpoint_dir, os.path.join(current_root_path, 'src/config'), settings.size, settings.old_version, settings.preprocess)
-preprocess_model = CropAndExtract(sadtalker_paths, settings.device)
-audio_to_coeff = Audio2Coeff(sadtalker_paths,  settings.device)    
-animate_from_coeff = AnimateFromCoeff(sadtalker_paths, settings.device)
+sadtalker_paths = init_path(global_settings.checkpoint_dir, os.path.join(current_root_path, 'src/config'), global_settings.size, global_settings.old_version, global_settings.preprocess)
+preprocess_model = CropAndExtract(sadtalker_paths, global_settings.device)
+audio_to_coeff = Audio2Coeff(sadtalker_paths,  global_settings.device)    
+animate_from_coeff = AnimateFromCoeff(sadtalker_paths, global_settings.device)
 
 # need to handle file objects in args
 def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings()):
-    runid=str(uuid4())
     #torch.backends.cudnn.enabled = False
     pic_path = str_imgpath
     audio_path = str_wavfile
-    save_dir = '/tmp/sadtalker_run_' + runid
+    save_dir = '/tmp/sadtalker_run_' + strftime("%Y_%m_%d_%H.%M.%S.%N")
     os.makedirs(save_dir, exist_ok=True)
     first_frame_dir = os.path.join(save_dir, 'first_frame_dir')
     os.makedirs(first_frame_dir, exist_ok=True)
@@ -114,49 +118,24 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings()):
     
     result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                 enhancer=settings.enhancer, background_enhancer=settings.background_enhancer, preprocess=settings.preprocess, img_size=settings.size)
-    outfile_name=  runid + '.mp4'
-    outfile_path=settings.result_dir + '/' + outfile_name
-    os.rename(result, outfile_path)
-    print('The generated video is named:', outfile_path)
-    
-    #if not settings.verbose:
-    #    shutil.rmtree(save_dir)
-    return outfile_path
+
+    return result
 
 
 
 @app.get("/")
 async def root():
-    return '''<html>
-<head>
-    <script
-      src="https://code.jquery.com/jquery-3.7.1.min.js"
-      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
-      crossorigin="anonymous"></script> 
-
-</head>
-   <body>
-        <form method=post action="/upload"  enctype="multipart/form-data">
-            face image: <input name="face_file" type="file" required />   </br>
-            wav file: <input name="wav_file" type="file" required />   </br>
-            <input type = "submit" value="Upload">  
-        </form>
-
-    </body>
-</html>'''
+    return render_template('index.html')
 
 def temp_save(obj_file,str_filename):
     obj_file.save(str_filename)
 
-
-@app.route('/upload', methods = ['POST'])
+@app.route('/run_sadtalker', methods = ['POST'])
 async def run_sadtalker(): 
     if request.files['face_file'].filename == '' :
         return "No Face File"
     if request.files['wav_file'].filename == '' : 
         return "No Wav File"
-    # adding multi-threaded here to compensite for large file uploads
-    # may remove later
     face_file=tempfile.NamedTemporaryFile().name
     wav_file=tempfile.NamedTemporaryFile().name
     threads = []
@@ -164,13 +143,40 @@ async def run_sadtalker():
     threads.append(threading.Thread(target=temp_save, args=(request.files['face_file'],face_file)))
     for thread in threads:
         thread.start()
-
     for thread in threads:
         thread.join()
-    print(wav_file,face_file)
     final_file=sadtalker_main(wav_file,face_file);
-    
     return send_file(final_file,os.path.basename(final_file))
+
+@app.route('/upload_face', methods = ['POST'])
+async def upload_face(): 
+    if request.files['face_file'].filename == '' :
+        return "No Face File"    
+    face_name=request.form.get('name',None)
+    if face_name == None:
+        return "No Face Name Supplied"
+    face_name=os.path.basename(face_name)
+    request.files['face_file'].save(global_settings.face_folder + "/" + face_name + ".sadface" ) # .sadface is for security
+    return '{"status":"success"}'
+
+
+@app.get("/view_system_face")
+async def view_system_face():
+    face_name=request.args.get("name",None)
+    if face_name == None:
+        return 'No face name supplied'
+    face_file=face_name + ".sadface"
+    if os.path.isfile(global_settings.face_folder + "/" + face_file):
+        return send_from_directory(global_settings.face_folder,face_file)
+    else:
+        return "Face not Found"
+
+@app.get("/get_system_faces")
+async def get_system_faces():
+    faces=glob(global_settings.face_folder + "/*.sadface")
+    for idx, face in enumerate(faces):
+        faces[idx]=os.path.basename(face).replace(".sadface","")
+    return faces
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=7666)
