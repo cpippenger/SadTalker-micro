@@ -1,5 +1,5 @@
 from glob import glob
-import pickle
+import json
 import threading
 import torch
 from time import  strftime
@@ -56,6 +56,7 @@ class SadTalker_Settings:
     device='cuda'
     # these are extra
     face_folder='./faces'
+    coeff_data=None
 
 global_settings=SadTalker_Settings()
 os.makedirs(global_settings.face_folder, exist_ok=True)
@@ -67,7 +68,7 @@ audio_to_coeff = Audio2Coeff(sadtalker_paths,  global_settings.device)
 animate_from_coeff = AnimateFromCoeff(sadtalker_paths, global_settings.device)
 
 # need to handle file objects in args
-def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings()):
+def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preprocess_data=None):
     #torch.backends.cudnn.enabled = False
     pic_path = str_imgpath
     audio_path = str_wavfile
@@ -76,8 +77,15 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings()):
     first_frame_dir = os.path.join(save_dir, 'first_frame_dir')
     os.makedirs(first_frame_dir, exist_ok=True)
     print('3DMM Extraction for source image')
-    first_coeff_path, crop_pic_path, crop_info =  preprocess_model.generate(pic_path, first_frame_dir, settings.preprocess,\
-                                                                             source_image_flag=True, pic_size=settings.size)
+    
+    if preprocess_data == None:
+        first_coeff_path, crop_pic_path, crop_info =  preprocess_model.generate(pic_path, first_frame_dir, settings.preprocess,\
+                                                                                 source_image_flag=True, pic_size=settings.size)
+    else:
+        first_coeff_path = preprocess_data['first_coeff_path']
+        crop_pic_path = preprocess_data['crop_pic_path']
+        crop_info = preprocess_data['crop_info']
+    # end here
     if first_coeff_path is None:
         print("Can't get the coeffs of the input")
         return
@@ -157,10 +165,16 @@ async def upload_face():
     if face_name == None:
         return "No Face Name Supplied"
     face_name=os.path.basename(face_name)
-    request.files['face_file'].save(global_settings.face_folder + "/" + face_name + ".sadface" ) # .sadface is for security
-    
-    f = open(global_settings.face_folder + "/" + face_name+".sadface_settings", "wb")
-    pickle.dump(SadTalker_Settings(), f)
+    upload_face_file=tempfile.NamedTemporaryFile().name
+    request.files['face_file'].save(upload_face_file) # .sadface is for security
+    sad_temp='/tmp/run_sadtalker_'+  strftime("%Y_%m_%d_%H.%M.%S")
+    os.makedirs(sad_temp)
+    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, sad_temp, "crop",\
+                                                                             source_image_flag=True, pic_size=global_settings.size)
+    f = open(global_settings.face_folder + "/" + face_name+".sadface", "w+")
+    f.write(json.dumps({"first_coeff_path":temp_first_coeff_path,
+                        "crop_pic_path":temp_crop_pic_path,
+                        "crop_info":temp_crop_info}))
     f.close()
     return '{"status":"success"}'
 
@@ -171,14 +185,18 @@ async def generate_avatar_message():
     face_name=request.form.get('name',None)
     if face_name == None:
         return "No Face Name Supplied"
-    face_name=os.path.basename(face_name)
-    face_file=global_settings.face_folder + '/' + face_name + '.sadface'
-    f = open(global_settings.face_folder + '/' + face_name + ".sadface_settings", 'rb')
-    stored_settings = pickle.load(f)
-    f.close()
+
     wav_file=tempfile.NamedTemporaryFile().name    
     request.files['wav_file'].save(wav_file)
-    final_file=sadtalker_main(wav_file,face_file,stored_settings);
+                
+    face_name=os.path.basename(face_name)
+    face_file=global_settings.face_folder + '/' + face_name + '.sadface'
+    
+    f = open(face_file,"r+")
+    sadface_data = json.loads(f.read())
+    f.close()
+    # ill fix these arguments later
+    final_file=sadtalker_main(wav_file,"",global_settings,sadface_data);
     return send_file(final_file)
 
 @app.get("/view_system_face")
