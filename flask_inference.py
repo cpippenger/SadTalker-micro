@@ -17,6 +17,7 @@ from src.utils.init_path import init_path
 #download models, script will not download over existing
 os.system("bash scripts/download_models.sh")
 
+
 app = Flask(__name__,static_folder="cache")
 
 # this is the same as the arguments here 
@@ -155,7 +156,7 @@ async def run_sadtalker():
     for thread in threads:
         thread.join()
     final_file=sadtalker_main(wav_file,face_file);
-    return send_file(final_file,os.path.basename(final_file))
+    return send_file(final_file,"application/octet-stream")
 
 @app.route('/upload_face', methods = ['POST'])
 async def upload_face(): 
@@ -167,7 +168,7 @@ async def upload_face():
     face_name=os.path.basename(face_name)
     upload_face_file=tempfile.NamedTemporaryFile().name
     request.files['face_file'].save(upload_face_file) # .sadface is for security
-    sad_temp='/tmp/run_sadtalker_'+  strftime("%Y_%m_%d_%H.%M.%S")
+    sad_temp='/tmp/sadtalkerface_'+ face_name + '_'  + strftime("%Y_%m_%d_%H.%M.%S")
     os.makedirs(sad_temp)
     temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, sad_temp, "crop",\
                                                                              source_image_flag=True, pic_size=global_settings.size)
@@ -197,7 +198,7 @@ async def generate_avatar_message():
     f.close()
     # ill fix these arguments later
     final_file=sadtalker_main(wav_file,"",global_settings,sadface_data);
-    return send_file(final_file)
+    return send_file(final_file,"application/octet-stream")
 
 @app.get("/view_system_face")
 async def view_system_face():
@@ -205,8 +206,11 @@ async def view_system_face():
     if face_name == None:
         return 'No face name supplied'
     face_file=face_name + ".sadface"
-    if os.path.isfile(global_settings.face_folder + "/" + face_file):
-        return send_from_directory(global_settings.face_folder,face_file)
+    if os.path.isfile(global_settings.face_folder + "/" + face_file):        
+        f = open(global_settings.face_folder + "/" + face_file,"r+")
+        sadface_data = json.loads(f.read())
+        f.close()
+        return send_file(sadface_data['crop_pic_path'],"application/octet-stream")
     else:
         return "Face not Found"
 

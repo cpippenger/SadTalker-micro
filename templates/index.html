@@ -1,0 +1,51 @@
+<html>
+<head>
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"></script> 
+<script>
+    $( window ).on( "load", function() {
+        names=$.get("/get_system_faces" ,function( data ) {
+				  for (i in data) {
+						$('#name_select').append('<option>'+data[i]+'</option>');
+					}
+					
+					$('#avatar').attr('src',"/view_system_face?name="+data[0])
+				})
+	
+    });
+	</script>
+</head>
+   <body>
+   <h1>Upload your own image </h1>
+           <form method=post action="/run_sadtalker"  enctype="multipart/form-data"  >	
+            face image: <input name="face_file" type="file" required />   </br>
+            wav file: <input name="wav_file" type="file" required />   </br>
+            <input type="submit" value="Upload">  
+        </form>
+		<hr />
+   <h1>Create System Face </h1>
+           <form method=post action="/upload_face"  enctype="multipart/form-data"  >	
+			face name: <input name='name' type="text" /></br>
+		   face image: <input name="face_file" type="file" required />   </br>
+            <input type="submit" value="Upload">  
+        </form>
+
+   <h1>use system faces </h1>
+   
+		<img src='' id='avatar' />
+        <form method=post action="/generate_avatar_message"  enctype="multipart/form-data"  >
+			name:
+			<select name="name" id="name_select" >
+			</select></br>
+            wav file: <input name="wav_file" type="file" required />   </br>
+            <input type = "submit" value="Upload">  
+        </form>
+		
+
+    </body>
+	
+	
+	
+</html>
