@@ -167,7 +167,7 @@ async def upload_face():
         return "No Face Name Supplied"
     face_name=os.path.basename(face_name)
     upload_face_file=tempfile.NamedTemporaryFile().name
-    request.files['face_file'].save(upload_face_file) # .sadface is for security
+    request.files['face_file'].save(upload_face_file) 
     sad_temp='/tmp/sadtalkerface_'+ face_name + '_'  + strftime("%Y_%m_%d_%H.%M.%S")
     os.makedirs(sad_temp)
     temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, sad_temp, "crop",\
