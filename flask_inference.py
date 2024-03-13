@@ -13,7 +13,7 @@ from src.facerender.animate import AnimateFromCoeff
 from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
-
+#import yappi
 #download models, script will not download over existing
 os.system("bash scripts/download_models.sh")
 
@@ -23,8 +23,6 @@ app = Flask(__name__,static_folder="cache")
 # this is the same as the arguments here 
 # https://github.com/OpenTalker/SadTalker/blob/cd4c0465ae0b54a6f85af57f5c65fec9fe23e7f8/inference.py#L100
 class SadTalker_Settings:
-    #driven_audio='./examples/driven_audio/bus_chinese.wav'
-    #source_image='./examples/source_image/full_body_1.png'
     ref_eyeblink=None
     ref_pose=None
     checkpoint_dir='./checkpoints'
@@ -73,13 +71,13 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
     #torch.backends.cudnn.enabled = False
     pic_path = str_imgpath
     audio_path = str_wavfile
-    save_dir = '/tmp/sadtalker_run_' + strftime("%Y_%m_%d_%H.%M.%S.%N")
+    save_dir = '/tmp/sadtalker_run_' + strftime("%Y_%m_%d_%H.%M.%S")
     os.makedirs(save_dir, exist_ok=True)
     first_frame_dir = os.path.join(save_dir, 'first_frame_dir')
     os.makedirs(first_frame_dir, exist_ok=True)
-    print('3DMM Extraction for source image')
-    
+
     if preprocess_data == None:
+        print('3DMM Extraction for source image')
         first_coeff_path, crop_pic_path, crop_info =  preprocess_model.generate(pic_path, first_frame_dir, settings.preprocess,\
                                                                                  source_image_flag=True, pic_size=settings.size)
     else:
@@ -168,9 +166,9 @@ async def upload_face():
     face_name=os.path.basename(face_name)
     upload_face_file=tempfile.NamedTemporaryFile().name
     request.files['face_file'].save(upload_face_file) 
-    sad_temp='/tmp/sadtalkerface_'+ face_name + '_'  + strftime("%Y_%m_%d_%H.%M.%S")
-    os.makedirs(sad_temp)
-    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, sad_temp, "crop",\
+    face_dir='faces/'+ face_name 
+    os.makedirs(face_dir)
+    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, face_dir, "crop",\
                                                                              source_image_flag=True, pic_size=global_settings.size)
     f = open(global_settings.face_folder + "/" + face_name+".sadface", "w+")
     f.write(json.dumps({"first_coeff_path":temp_first_coeff_path,
@@ -181,6 +179,7 @@ async def upload_face():
 
 @app.route('/generate_avatar_message', methods = ['POST'])
 async def generate_avatar_message():
+
     if request.files['wav_file'].filename == '' : 
         return "No Wav File"
     face_name=request.form.get('name',None)
@@ -196,8 +195,13 @@ async def generate_avatar_message():
     f = open(face_file,"r+")
     sadface_data = json.loads(f.read())
     f.close()
+    #yappi.set_clock_type("cpu") # Use set_clock_type("wall") for wall time
+    #yappi.start()
     # ill fix these arguments later
     final_file=sadtalker_main(wav_file,"",global_settings,sadface_data);
+    #yappi.stop()
+    #stats = yappi.get_func_stats()
+    #stats.save('testdata', type='callgrind')
     return send_file(final_file,"application/octet-stream")
 
 @app.get("/view_system_face")
@@ -222,4 +226,4 @@ async def get_system_faces():
     return faces
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=7666)
+    app.run(debug=False, host='0.0.0.0', port=7666)
