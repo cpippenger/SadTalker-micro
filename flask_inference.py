@@ -150,17 +150,17 @@ async def run_sadtalker():
         return "No Face File"
     if request.files['wav_file'].filename == '' : 
         return "No Wav File"
-    face_file=tempfile.NamedTemporaryFile().name
-    wav_file=tempfile.NamedTemporaryFile().name
-    threads = []
+    #face_file=tempfile.NamedTemporaryFile().name
+    #wav_file=tempfile.NamedTemporaryFile().name
+    #threads = []
     #threads.append(threading.Thread(target=temp_save, args=(request.files['wav_file'],wav_file)))
-    threads.append(threading.Thread(target=temp_save, args=(request.files['face_file'],face_file)))
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    #threads.append(threading.Thread(target=temp_save, args=(request.files['face_file'],face_file)))
+    #for thread in threads:
+    #    thread.start()
+    #for thread in threads:
+    #    thread.join()
     #final_file=sadtalker_main(wav_file,face_file);
-    final_file=sadtalker_main(request.files['wav_file'],face_file);
+    final_file=sadtalker_main(request.files['wav_file'],request.files['face_file']);
     return send_file(final_file,"application/octet-stream")
 
 @app.route('/upload_face', methods = ['POST'])
