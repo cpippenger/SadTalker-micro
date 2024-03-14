@@ -98,7 +98,7 @@ class CropAndExtract():
             #https://github.com/ahupp/python-magic/blob/master/magic/__init__.py#L220C5-L220C20
             print('!! file object recived')
             # figure out file type from file buffer, support above types
-            magic_number=magic.from_buffer(input_path.read())
+            magic_number=magic.from_buffer(input_path.read(16)) # 16 bytes seems to work for images
             file_type=magic_number.split(' ')[0] 
             print('!!!magic=',magic_number)
             input_path.seek(0) # reset file for next read
