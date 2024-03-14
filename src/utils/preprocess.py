@@ -77,7 +77,9 @@ class CropAndExtract():
         self.lm3d_std = load_lm3d(sadtalker_path['dir_of_BFM_fitting'])
         self.device = device
     
-    def generate(self, input_path, save_dir, crop_or_resize='crop', source_image_flag=False, pic_size=256):
+    # return_filepaths=True will return string paths to files, otherwise return data or fileobjects
+    # this will save files to disk
+    def generate(self, input_path, save_dir, crop_or_resize='crop', source_image_flag=False, pic_size=256,return_filepaths=True):
         landmarks_path =  os.path.join(save_dir, 'landmarks.txt') 
         coeff_path =  os.path.join(save_dir, 'coeff.mat')  
         png_path =  os.path.join(save_dir, 'face.png')  

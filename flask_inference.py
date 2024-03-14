@@ -1,5 +1,6 @@
 from glob import glob
 import json
+import pickle
 import threading
 import torch
 from time import  strftime
@@ -13,6 +14,7 @@ from src.facerender.animate import AnimateFromCoeff
 from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
+import numpy as np
 #import yappi
 #download models, script will not download over existing
 os.system("bash scripts/download_models.sh")
@@ -125,11 +127,12 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
                                 expression_scale=settings.expression_scale, still_mode=settings.still, preprocess=settings.preprocess, size=settings.size)
     
 
-    # over riding audio path with temp save file from flask until code finished
-    audio_path.seek(0) # need to reset file pointer to start from last reads
-    temp_junk =tempfile.NamedTemporaryFile().name
-    audio_path.save(temp_junk)
-    data['audio_path'] = temp_junk # override with argument
+    # over riding audio path with temp save file from flask until ffmpeg code uses pipes
+    if not isinstance(str_wavfile,str):
+        audio_path.seek(0) # need to reset file pointer to start from last reads
+        temp_junk =tempfile.NamedTemporaryFile().name
+        audio_path.save(temp_junk)
+        data['audio_path'] = temp_junk # override with argument
     result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                 enhancer=settings.enhancer, background_enhancer=settings.background_enhancer, preprocess=settings.preprocess, img_size=settings.size)
 
@@ -166,14 +169,26 @@ async def upload_face():
         return "No Face Name Supplied"
     face_name=os.path.basename(face_name)
     face_dir='faces/'+ face_name 
-    os.makedirs(face_dir)
-    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(request.files['face_file'], face_dir, "crop",\
-                                                                             source_image_flag=True, pic_size=global_settings.size)
-    f = open(global_settings.face_folder + "/" + face_name+".sadface", "w+")
-    f.write(json.dumps({"first_coeff_path":temp_first_coeff_path,
-                        "crop_pic_path":temp_crop_pic_path,
-                        "crop_info":temp_crop_info}))
-    f.close()
+    try:
+        os.makedirs(face_dir)
+        temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(request.files['face_file'], face_dir, "crop",\
+                                                                                 source_image_flag=True, pic_size=global_settings.size)
+        
+        # nasty, temprary code to store in one file
+        cpp = open(temp_crop_pic_path,'rb')
+        cpp_data=cpp.read()
+        cpp.close()
+
+        cff=open(temp_first_coeff_path,'rb')
+        coeff_data = cff.read()
+        cff.close()
+        
+        f=open(face_dir + '/face.sadface','wb')
+        pickle.dump({'coeff_data':coeff_data,'cpp_data':cpp_data,'crop_info':temp_crop_info},f,protocol=pickle.HIGHEST_PROTOCOL)
+        f.close()
+    except FileExistsError as e:
+        return "Error: A Face with that name exists"
+        
     return '{"status":"success"}'
 
 @app.route('/generate_avatar_message', methods = ['POST'])
@@ -189,13 +204,16 @@ async def generate_avatar_message():
     request.files['wav_file'].save(wav_file)
                 
     face_name=os.path.basename(face_name)
-    face_file=global_settings.face_folder + '/' + face_name + '.sadface'
-    
-    f = open(face_file,"r+")
-    sadface_data = json.loads(f.read())
+    face_dir=global_settings.face_folder  +'/'+face_name
+    # these will be replaced with the data in the face.sadface file at some point
+    preprocess_data = {}
+    preprocess_data['first_coeff_path'] = face_dir+'/coeff.mat'
+    preprocess_data['crop_pic_path']=face_dir+'/face.png'
+    f=open(face_dir+'/face.sadface','rb')
+    data=pickle.load(f)
+    preprocess_data['crop_info']=data['crop_info']
     f.close()
-
-    final_file=sadtalker_main(wav_file,"",global_settings,sadface_data);
+    final_file=sadtalker_main(wav_file,"",global_settings,preprocess_data);
 
     return send_file(final_file,"application/octet-stream")
 
