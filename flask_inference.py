@@ -124,6 +124,12 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
                                 settings.batch_size, settings.input_yaw, settings.input_pitch, settings.input_roll,
                                 expression_scale=settings.expression_scale, still_mode=settings.still, preprocess=settings.preprocess, size=settings.size)
     
+
+    # over riding audio path with temp save file from flask until code finished
+    audio_path.seek(0) # need to reset file pointer to start from last reads
+    temp_junk =tempfile.NamedTemporaryFile().name
+    audio_path.save(temp_junk)
+    data['audio_path'] = temp_junk # override with argument
     result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                 enhancer=settings.enhancer, background_enhancer=settings.background_enhancer, preprocess=settings.preprocess, img_size=settings.size)
 
@@ -147,13 +153,14 @@ async def run_sadtalker():
     face_file=tempfile.NamedTemporaryFile().name
     wav_file=tempfile.NamedTemporaryFile().name
     threads = []
-    threads.append(threading.Thread(target=temp_save, args=(request.files['wav_file'],wav_file)))
+    #threads.append(threading.Thread(target=temp_save, args=(request.files['wav_file'],wav_file)))
     threads.append(threading.Thread(target=temp_save, args=(request.files['face_file'],face_file)))
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    final_file=sadtalker_main(wav_file,face_file);
+    #final_file=sadtalker_main(wav_file,face_file);
+    final_file=sadtalker_main(request.files['wav_file'],face_file);
     return send_file(final_file,"application/octet-stream")
 
 @app.route('/upload_face', methods = ['POST'])
@@ -195,13 +202,9 @@ async def generate_avatar_message():
     f = open(face_file,"r+")
     sadface_data = json.loads(f.read())
     f.close()
-    #yappi.set_clock_type("cpu") # Use set_clock_type("wall") for wall time
-    #yappi.start()
-    # ill fix these arguments later
+
     final_file=sadtalker_main(wav_file,"",global_settings,sadface_data);
-    #yappi.stop()
-    #stats = yappi.get_func_stats()
-    #stats.save('testdata', type='callgrind')
+
     return send_file(final_file,"application/octet-stream")
 
 @app.get("/view_system_face")
