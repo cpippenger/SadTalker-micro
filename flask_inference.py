@@ -165,11 +165,9 @@ async def upload_face():
     if face_name == None:
         return "No Face Name Supplied"
     face_name=os.path.basename(face_name)
-    upload_face_file=tempfile.NamedTemporaryFile().name
-    request.files['face_file'].save(upload_face_file) 
     face_dir='faces/'+ face_name 
     os.makedirs(face_dir)
-    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, face_dir, "crop",\
+    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(request.files['face_file'], face_dir, "crop",\
                                                                              source_image_flag=True, pic_size=global_settings.size)
     f = open(global_settings.face_folder + "/" + face_name+".sadface", "w+")
     f.write(json.dumps({"first_coeff_path":temp_first_coeff_path,
