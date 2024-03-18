@@ -79,7 +79,8 @@ class CropAndExtract():
     
     # return_filepaths=True will return string paths to files, otherwise return data or fileobjects
     # this will save files to disk
-    def generate(self, input_path, save_dir, crop_or_resize='crop', source_image_flag=False, pic_size=256,return_filepaths=True):
+    def generate(self, input_path, save_dir, crop_or_resize='crop',
+                source_image_flag=False, pic_size=256,return_filepaths=True):
         landmarks_path =  os.path.join(save_dir, 'landmarks.txt') 
         coeff_path =  os.path.join(save_dir, 'coeff.mat')  
         png_path =  os.path.join(save_dir, 'face.png')  
@@ -188,5 +189,7 @@ class CropAndExtract():
             semantic_npy = np.array(video_coeffs)[:,0] 
 
             savemat(coeff_path, {'coeff_3dmm': semantic_npy, 'full_3dmm': np.array(full_coeffs)[0]})
-
-        return coeff_path, png_path, crop_info
+        if return_filepaths == True:
+            return coeff_path, png_path, crop_info
+        else:
+            return {'coeff_3dmm': semantic_npy, 'full_3dmm': np.array(full_coeffs)[0]}, cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR), crop_info 

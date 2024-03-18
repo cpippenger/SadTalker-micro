@@ -91,6 +91,7 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
         print("Can't get the coeffs of the input")
         return
 
+    # not implemented (needs file reduction)
     if settings.ref_eyeblink is not None:
         ref_eyeblink_videoname = os.path.splitext(os.path.split(ref_eyeblink)[-1])[0]
         ref_eyeblink_frame_dir = os.path.join(save_dir, ref_eyeblink_videoname)
@@ -99,7 +100,7 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
         ref_eyeblink_coeff_path, _, _ =  preprocess_model.generate(ref_eyeblink, ref_eyeblink_frame_dir, settings.preprocess, source_image_flag=False)
     else:
         ref_eyeblink_coeff_path=None
-
+    # not implmented (needs file reduction)
     if settings.ref_pose is not None:
         if settings.ref_pose == settings.ref_eyeblink: 
             ref_pose_coeff_path = ref_eyeblink_coeff_path
@@ -114,9 +115,9 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
 
     #audio2ceoff
     batch = get_data(first_coeff_path, audio_path, settings.device, ref_eyeblink_coeff_path, still=settings.still)
-    coeff_path = audio_to_coeff.generate(batch, save_dir, settings.pose_style, ref_pose_coeff_path)
+    coeff_path = audio_to_coeff.generate(batch, save_dir, settings.pose_style, ref_pose_coeff_path,return_filepaths=False)
 
-    # 3dface render
+    # 3dface render (not implemented) (needs file reduction)
     if settings.face3dvis:
         from src.face3d.visualize import gen_composed_video
         gen_composed_video(args, device, first_coeff_path, coeff_path, audio_path, os.path.join(save_dir, '3dface.mp4'))
@@ -124,8 +125,9 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
     #coeff2video
     data = get_facerender_data(coeff_path, crop_pic_path, first_coeff_path, audio_path, 
                                 settings.batch_size, settings.input_yaw, settings.input_pitch, settings.input_roll,
-                                expression_scale=settings.expression_scale, still_mode=settings.still, preprocess=settings.preprocess, size=settings.size)
-    
+                                expression_scale=settings.expression_scale, still_mode=settings.still, 
+                                preprocess=settings.preprocess, size=settings.size,create_files=False)
+   
 
     # over riding audio path with temp save file from flask until ffmpeg code uses pipes
     if not isinstance(str_wavfile,str):
@@ -172,19 +174,11 @@ async def upload_face():
     try:
         os.makedirs(face_dir)
         temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(request.files['face_file'], face_dir, "crop",\
-                                                                                 source_image_flag=True, pic_size=global_settings.size)
+                                                                                 source_image_flag=True, pic_size=global_settings.size,return_filepaths=False)
         
-        # nasty, temprary code to store in one file
-        cpp = open(temp_crop_pic_path,'rb')
-        cpp_data=cpp.read()
-        cpp.close()
-
-        cff=open(temp_first_coeff_path,'rb')
-        coeff_data = cff.read()
-        cff.close()
         
         f=open(face_dir + '/face.sadface','wb')
-        pickle.dump({'coeff_data':coeff_data,'cpp_data':cpp_data,'crop_info':temp_crop_info},f,protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump({'first_coeff_path':temp_first_coeff_path,'crop_pic_path':temp_crop_pic_path,'crop_info':temp_crop_info},f,protocol=pickle.HIGHEST_PROTOCOL)
         f.close()
     except FileExistsError as e:
         return "Error: A Face with that name exists"
@@ -199,21 +193,20 @@ async def generate_avatar_message():
     face_name=request.form.get('name',None)
     if face_name == None:
         return "No Face Name Supplied"
-
-    wav_file=tempfile.NamedTemporaryFile().name    
-    request.files['wav_file'].save(wav_file)
-                
+           
     face_name=os.path.basename(face_name)
     face_dir=global_settings.face_folder  +'/'+face_name
     # these will be replaced with the data in the face.sadface file at some point
     preprocess_data = {}
-    preprocess_data['first_coeff_path'] = face_dir+'/coeff.mat'
     preprocess_data['crop_pic_path']=face_dir+'/face.png'
+    
     f=open(face_dir+'/face.sadface','rb')
     data=pickle.load(f)
-    preprocess_data['crop_info']=data['crop_info']
     f.close()
-    final_file=sadtalker_main(wav_file,"",global_settings,preprocess_data);
+    preprocess_data['first_coeff_path'] = data['first_coeff_path']    # testing this
+    preprocess_data['crop_info']=data['crop_info']
+    final_file=sadtalker_main(request.files['wav_file'],"",global_settings,preprocess_data);
+    
 
     return send_file(final_file,"application/octet-stream")
 
