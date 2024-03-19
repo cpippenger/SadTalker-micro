@@ -96,6 +96,11 @@ class CropAndExtract():
                 print('!! processing video file...')
                 full_frames = [] 
                 full_frames =__video_loader(input_path)
+                
+            # not sure if this is needd for videos, seems to run eithe rway, i think  you
+            # can pass cv2.COLOR_BGR2RGB to imread to skip this, if picture ends up blue
+            # its probably something to do with this
+            x_full_frames= [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  for frame in full_frames] 
 
         else:
             #https://github.com/ahupp/python-magic/blob/master/magic/__init__.py#L220C5-L220C20
@@ -106,13 +111,12 @@ class CropAndExtract():
             print('!!!magic=',magic_number)
             input_path.seek(0) # reset file for next read
             if file_type in ['JPEG','PNG']:
-                full_frames = [cv2.imdecode(np.asarray(bytearray(input_path.read()), dtype=np.uint8),cv2.IMREAD_COLOR)]
+                x_full_frames = [cv2.imdecode(np.asarray(bytearray(input_path.read()), dtype=np.uint8),cv2.IMREAD_UNCHANGED )]
             elif file_type in ['MPEG']: # this is unsupported
                 raise ValueError('Loading Videos from File Object Not Supported yet')
             else:
                 raise ValueError('File must be a valid PNG or JPEG')
             
-        x_full_frames= [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  for frame in full_frames] 
 
         #### crop images as the 
         if 'crop' in crop_or_resize.lower(): # default crop

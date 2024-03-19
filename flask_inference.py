@@ -67,7 +67,7 @@ sadtalker_paths = init_path(global_settings.checkpoint_dir, os.path.join(current
 preprocess_model = CropAndExtract(sadtalker_paths, global_settings.device)
 audio_to_coeff = Audio2Coeff(sadtalker_paths,  global_settings.device)    
 animate_from_coeff = AnimateFromCoeff(sadtalker_paths, global_settings.device)
-
+######### sadtalker_main ################
 # need to handle file objects in args
 def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preprocess_data=None):
     #torch.backends.cudnn.enabled = False
@@ -140,7 +140,7 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
 
     return result
 
-
+#########################
 
 @app.get("/")
 async def root():
@@ -197,14 +197,10 @@ async def generate_avatar_message():
     face_name=os.path.basename(face_name)
     face_dir=global_settings.face_folder  +'/'+face_name
     # these will be replaced with the data in the face.sadface file at some point
-    preprocess_data = {}
-    preprocess_data['crop_pic_path']=face_dir+'/face.png'
-    
     f=open(face_dir+'/face.sadface','rb')
-    data=pickle.load(f)
+    preprocess_data=pickle.load(f)
     f.close()
-    preprocess_data['first_coeff_path'] = data['first_coeff_path']    # testing this
-    preprocess_data['crop_info']=data['crop_info']
+
     final_file=sadtalker_main(request.files['wav_file'],"",global_settings,preprocess_data);
     
 
