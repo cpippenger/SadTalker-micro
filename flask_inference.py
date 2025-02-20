@@ -1,6 +1,5 @@
 from glob import glob
 import json
-import pickle
 import threading
 import torch
 from time import  strftime
@@ -14,7 +13,6 @@ from src.facerender.animate import AnimateFromCoeff
 from src.generate_batch import get_data
 from src.generate_facerender_batch import get_facerender_data
 from src.utils.init_path import init_path
-import numpy as np
 #import yappi
 #download models, script will not download over existing
 os.system("bash scripts/download_models.sh")
@@ -67,7 +65,7 @@ sadtalker_paths = init_path(global_settings.checkpoint_dir, os.path.join(current
 preprocess_model = CropAndExtract(sadtalker_paths, global_settings.device)
 audio_to_coeff = Audio2Coeff(sadtalker_paths,  global_settings.device)    
 animate_from_coeff = AnimateFromCoeff(sadtalker_paths, global_settings.device)
-######### sadtalker_main ################
+
 # need to handle file objects in args
 def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preprocess_data=None):
     #torch.backends.cudnn.enabled = False
@@ -91,7 +89,6 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
         print("Can't get the coeffs of the input")
         return
 
-    # not implemented (needs file reduction)
     if settings.ref_eyeblink is not None:
         ref_eyeblink_videoname = os.path.splitext(os.path.split(ref_eyeblink)[-1])[0]
         ref_eyeblink_frame_dir = os.path.join(save_dir, ref_eyeblink_videoname)
@@ -100,7 +97,7 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
         ref_eyeblink_coeff_path, _, _ =  preprocess_model.generate(ref_eyeblink, ref_eyeblink_frame_dir, settings.preprocess, source_image_flag=False)
     else:
         ref_eyeblink_coeff_path=None
-    # not implmented (needs file reduction)
+
     if settings.ref_pose is not None:
         if settings.ref_pose == settings.ref_eyeblink: 
             ref_pose_coeff_path = ref_eyeblink_coeff_path
@@ -115,9 +112,9 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
 
     #audio2ceoff
     batch = get_data(first_coeff_path, audio_path, settings.device, ref_eyeblink_coeff_path, still=settings.still)
-    coeff_path = audio_to_coeff.generate(batch, save_dir, settings.pose_style, ref_pose_coeff_path,return_filepaths=False)
+    coeff_path = audio_to_coeff.generate(batch, save_dir, settings.pose_style, ref_pose_coeff_path)
 
-    # 3dface render (not implemented) (needs file reduction)
+    # 3dface render
     if settings.face3dvis:
         from src.face3d.visualize import gen_composed_video
         gen_composed_video(args, device, first_coeff_path, coeff_path, audio_path, os.path.join(save_dir, '3dface.mp4'))
@@ -125,22 +122,14 @@ def sadtalker_main(str_wavfile,str_imgpath,settings=SadTalker_Settings(),preproc
     #coeff2video
     data = get_facerender_data(coeff_path, crop_pic_path, first_coeff_path, audio_path, 
                                 settings.batch_size, settings.input_yaw, settings.input_pitch, settings.input_roll,
-                                expression_scale=settings.expression_scale, still_mode=settings.still, 
-                                preprocess=settings.preprocess, size=settings.size,create_files=False)
-   
-
-    # over riding audio path with temp save file from flask until ffmpeg code uses pipes
-    if not isinstance(str_wavfile,str):
-        audio_path.seek(0) # need to reset file pointer to start from last reads
-        temp_junk =tempfile.NamedTemporaryFile().name
-        audio_path.save(temp_junk)
-        data['audio_path'] = temp_junk # override with argument
+                                expression_scale=settings.expression_scale, still_mode=settings.still, preprocess=settings.preprocess, size=settings.size)
+    
     result = animate_from_coeff.generate(data, save_dir, pic_path, crop_info, \
                                 enhancer=settings.enhancer, background_enhancer=settings.background_enhancer, preprocess=settings.preprocess, img_size=settings.size)
 
     return result
 
-#########################
+
 
 @app.get("/")
 async def root():
@@ -155,12 +144,17 @@ async def run_sadtalker():
         return "No Face File"
     if request.files['wav_file'].filename == '' : 
         return "No Wav File"
-    try:
-        final_file=sadtalker_main(request.files['wav_file'],request.files['face_file']);
-        return send_file(final_file,"application/octet-stream")
-    except ValueError as ve:
-        return "Error: " + str(ve)
-    
+    face_file=tempfile.NamedTemporaryFile().name
+    wav_file=tempfile.NamedTemporaryFile().name
+    threads = []
+    threads.append(threading.Thread(target=temp_save, args=(request.files['wav_file'],wav_file)))
+    threads.append(threading.Thread(target=temp_save, args=(request.files['face_file'],face_file)))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    final_file=sadtalker_main(wav_file,face_file);
+    return send_file(final_file,"application/octet-stream")
 
 @app.route('/upload_face', methods = ['POST'])
 async def upload_face(): 
@@ -170,19 +164,17 @@ async def upload_face():
     if face_name == None:
         return "No Face Name Supplied"
     face_name=os.path.basename(face_name)
+    upload_face_file=tempfile.NamedTemporaryFile().name
+    request.files['face_file'].save(upload_face_file) 
     face_dir='faces/'+ face_name 
-    try:
-        os.makedirs(face_dir)
-        temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(request.files['face_file'], face_dir, "crop",\
-                                                                                 source_image_flag=True, pic_size=global_settings.size,return_filepaths=False)
-        
-        
-        f=open(face_dir + '/face.sadface','wb')
-        pickle.dump({'first_coeff_path':temp_first_coeff_path,'crop_pic_path':temp_crop_pic_path,'crop_info':temp_crop_info},f,protocol=pickle.HIGHEST_PROTOCOL)
-        f.close()
-    except FileExistsError as e:
-        return "Error: A Face with that name exists"
-        
+    os.makedirs(face_dir)
+    temp_first_coeff_path, temp_crop_pic_path, temp_crop_info =  preprocess_model.generate(upload_face_file, face_dir, "crop",\
+                                                                             source_image_flag=True, pic_size=global_settings.size)
+    f = open(global_settings.face_folder + "/" + face_name+".sadface", "w+")
+    f.write(json.dumps({"first_coeff_path":temp_first_coeff_path,
+                        "crop_pic_path":temp_crop_pic_path,
+                        "crop_info":temp_crop_info}))
+    f.close()
     return '{"status":"success"}'
 
 @app.route('/generate_avatar_message', methods = ['POST'])
@@ -193,17 +185,23 @@ async def generate_avatar_message():
     face_name=request.form.get('name',None)
     if face_name == None:
         return "No Face Name Supplied"
-           
+
+    wav_file=tempfile.NamedTemporaryFile().name    
+    request.files['wav_file'].save(wav_file)
+                
     face_name=os.path.basename(face_name)
-    face_dir=global_settings.face_folder  +'/'+face_name
-    # these will be replaced with the data in the face.sadface file at some point
-    f=open(face_dir+'/face.sadface','rb')
-    preprocess_data=pickle.load(f)
-    f.close()
-
-    final_file=sadtalker_main(request.files['wav_file'],"",global_settings,preprocess_data);
+    face_file=global_settings.face_folder + '/' + face_name + '.sadface'
     
-
+    f = open(face_file,"r+")
+    sadface_data = json.loads(f.read())
+    f.close()
+    #yappi.set_clock_type("cpu") # Use set_clock_type("wall") for wall time
+    #yappi.start()
+    # ill fix these arguments later
+    final_file=sadtalker_main(wav_file,"",global_settings,sadface_data);
+    #yappi.stop()
+    #stats = yappi.get_func_stats()
+    #stats.save('testdata', type='callgrind')
     return send_file(final_file,"application/octet-stream")
 
 @app.get("/view_system_face")

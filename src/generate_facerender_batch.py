@@ -1,30 +1,22 @@
 import os
 import numpy as np
 from PIL import Image
-from io import BytesIO # io namespace used in line under
 from skimage import io, img_as_float32, transform
 import torch
 import scipy.io as scio
 
 def get_facerender_data(coeff_path, pic_path, first_coeff_path, audio_path, 
                         batch_size, input_yaw_list=None, input_pitch_list=None, input_roll_list=None, 
-                        expression_scale=1.0, still_mode = False, preprocess='crop', size = 256,create_files=True):
+                        expression_scale=1.0, still_mode = False, preprocess='crop', size = 256):
 
     semantic_radius = 13
-    if isinstance(coeff_path,str):
-        video_name = os.path.splitext(os.path.split(coeff_path)[-1])[0]
-        txt_path = os.path.splitext(coeff_path)[0]
-    else:
-        video_name = "video_name"
-        txt_path = "txt_path"        
+    video_name = os.path.splitext(os.path.split(coeff_path)[-1])[0]
+    txt_path = os.path.splitext(coeff_path)[0]
 
-    if isinstance(pic_path,str):
-        img1 = Image.open(pic_path) # this will take a file object too
-        source_image = np.array(img1)        
-    else:
-        #turn raw data to file object for PIL
-        source_image = pic_path
     data={}
+
+    img1 = Image.open(pic_path)
+    source_image = np.array(img1)
     source_image = img_as_float32(source_image)
     source_image = transform.resize(source_image, (size, size, 3))
     source_image = source_image.transpose((2, 0, 1))
@@ -32,15 +24,8 @@ def get_facerender_data(coeff_path, pic_path, first_coeff_path, audio_path,
     source_image_ts = source_image_ts.repeat(batch_size, 1, 1, 1)
     data['source_image'] = source_image_ts
  
-    if isinstance(first_coeff_path,str):
-        source_semantics_dict = scio.loadmat(first_coeff_path)
-    else:
-        source_semantics_dict = first_coeff_path
-        
-    if isinstance(coeff_path,str):    
-        generated_dict = scio.loadmat(coeff_path)
-    else:
-        generated_dict = coeff_path
+    source_semantics_dict = scio.loadmat(first_coeff_path)
+    generated_dict = scio.loadmat(coeff_path)
 
     if 'full' not in preprocess.lower():
         source_semantics = source_semantics_dict['coeff_3dmm'][:1,:70]         #1 70
@@ -64,12 +49,11 @@ def get_facerender_data(coeff_path, pic_path, first_coeff_path, audio_path,
     if still_mode:
         generated_3dmm[:, 64:] = np.repeat(source_semantics[:, 64:], generated_3dmm.shape[0], axis=0)
 
-    if create_files == True:
-        with open(txt_path+'.txt', 'w') as f:
-            for coeff in generated_3dmm:
-                for i in coeff:
-                    f.write(str(i)[:7]   + '  '+'\t')
-                f.write('\n')
+    with open(txt_path+'.txt', 'w') as f:
+        for coeff in generated_3dmm:
+            for i in coeff:
+                f.write(str(i)[:7]   + '  '+'\t')
+            f.write('\n')
 
     target_semantics_list = [] 
     frame_num = generated_3dmm.shape[0]
